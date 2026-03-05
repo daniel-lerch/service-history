@@ -1,26 +1,29 @@
 import { churchtoolsClient } from '@churchtools/churchtools-client'
 import { type Event, type GroupMember, MemberStatus, type Service } from './ct-types.d'
-import type { Temporal } from 'temporal-polyfill'
+import { Temporal } from 'temporal-polyfill'
+
+export type ServiceHistoryGroup = {
+  id: number
+  name: string
+  memberStatus: MemberStatus
+  comment: string | null | undefined
+}
 
 export type PersonServiceHistory = {
   personId: number
   firstName: string
   lastName: string
-  groups: {
-    id: number
-    name: string
-    memberStatus: MemberStatus
-  }[]
+  groups: ServiceHistoryGroup[]
   services: {
     serviceId: number
-    date: string
+    date: Temporal.PlainDate
   }[]
 }
 
 export async function getServicePersons(services: Service[]): Promise<PersonServiceHistory[]> {
   const groupIds = Array.from(new Set(services.flatMap((service) => service.groupIds || [])))
   const groupMembers = await Promise.all(
-    groupIds.map((id) => churchtoolsClient.get<GroupMember[]>(`/groups/${id}/members`)),
+    groupIds.map((id) => churchtoolsClient.getAllPages<GroupMember>(`/groups/${id}/members`)),
   )
 
   // Group results by person id
@@ -45,6 +48,7 @@ export async function getServicePersons(services: Service[]): Promise<PersonServ
         id: parseInt(member.group.domainIdentifier),
         name: member.group.title,
         memberStatus: member.groupMemberStatus,
+        comment: member.comment,
       })
     })
   })
@@ -88,7 +92,7 @@ export async function loadServiceHistory(
 
       personHistory.services.push({
         serviceId,
-        date: eventDate,
+        date: Temporal.PlainDate.from(eventDate.substring(0, 10)),
       })
     })
   })
