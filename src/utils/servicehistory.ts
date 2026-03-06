@@ -61,12 +61,23 @@ export async function loadServiceHistory(
   from: Temporal.PlainDate,
   to: Temporal.PlainDate,
   history: PersonServiceHistory[],
+  clear: boolean,
 ) {
   const serviceIds = new Set(services.map((service) => service.id))
   const historyByPersonId = new Map(history.map((person) => [person.personId, person]))
   const events = await churchtoolsClient.get<Event[]>(
     `/events?from=${from.toString()}&to=${to.toString()}&include=eventServices`,
   )
+
+  history.forEach((person) => {
+    if (clear) {
+      person.services = []
+    } else {
+      person.services = person.services.filter(
+        (service) => service.date >= from && service.date <= to,
+      )
+    }
+  })
 
   events.forEach((event) => {
     const eventDate = event.startDate ?? event.endDate

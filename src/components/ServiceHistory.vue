@@ -4,7 +4,9 @@ import { getServicePersons, loadServiceHistory, type PersonServiceHistory, type 
 import Button from 'primevue/button';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
+import InputNumber from 'primevue/inputnumber';
 import MultiSelect from 'primevue/multiselect';
+import ToggleSwitch from 'primevue/toggleswitch';
 import { Temporal } from 'temporal-polyfill';
 import { computed, ref, watch } from 'vue';
 
@@ -13,15 +15,41 @@ defineProps<{
 }>();
 
 const selectedServices = ref<Service[]>([]);
-
+const beforeMonths = ref(18);
+const afterMonths = ref(4);
+const autoRefresh = ref(false);
 const history = ref<PersonServiceHistory[]>([]);
+let refreshIntervalId: number | undefined;
 
 watch(selectedServices, async (newValue) => {
   history.value = await getServicePersons(newValue)
-  const from = Temporal.Now.plainDateISO().subtract({ months: 18 })
-  const to = Temporal.Now.plainDateISO().add({ months: 4 })
-  await loadServiceHistory(newValue, from, to, history.value)
+  await refresh()
 })
+
+watch([beforeMonths, afterMonths], async () => {
+  await refresh()
+})
+
+watch(autoRefresh, (enabled) => {
+  if (refreshIntervalId !== undefined) {
+    clearInterval(refreshIntervalId);
+    refreshIntervalId = undefined;
+  }
+
+  if (enabled) {
+    refreshIntervalId = window.setInterval(() => {
+      // Refresh only services in the future to save bandwidth
+      const to = Temporal.Now.plainDateISO().add({ months: afterMonths.value })
+      loadServiceHistory(selectedServices.value, Temporal.Now.plainDateISO(), to, history.value, false)
+    }, 5000);
+  }
+});
+
+async function refresh() {
+  const from = Temporal.Now.plainDateISO().subtract({ months: beforeMonths.value })
+  const to = Temporal.Now.plainDateISO().add({ months: afterMonths.value })
+  await loadServiceHistory(selectedServices.value, from, to, history.value, true)
+}
 
 type HistoryRow = {
   personId: number;
@@ -62,11 +90,17 @@ function rowClass(data: HistoryRow) {
 </script>
 
 <template>
-  <div class="flex flex-row items-center gap-4 p-4">
-    <div class="text-xl">Diensthistorie</div>
+  <div class="flex flex-row flex-wrap items-center gap-4 p-4">
+    <div class="text-2xl mr-8">Diensthistorie</div>
     <MultiSelect v-model="selectedServices" :options="services" optionLabel="nameTranslated" filter
-      placeholder="Dienste auswählen" />
-    <Button icon="pi pi-refresh" />
+      placeholder="Dienste auswählen" class="flex-1 min-w-48" />
+    <InputNumber v-model="beforeMonths" :min="0" :max="60" suffix=" Monate zurück" showButtons class="w-48!" fluid />
+    <InputNumber v-model="afterMonths" :min="0" :max="60" suffix=" Monate voraus" showButtons class="w-48!" fluid />
+    <div class="flex items-center gap-2">
+      <ToggleSwitch v-model="autoRefresh" />
+      <label class="text-sm">Auto. Aktualisieren</label>
+    </div>
+    <Button icon="pi pi-refresh" @click="refresh" />
   </div>
   <DataTable :value="historyRows" sortMode="single" sortField="lastServiceDate" :sortOrder="1" dataKey="personId"
     class="mt-4" :rowClass="rowClass">
